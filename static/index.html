@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBD2 Dashboard - Honda Accord Diagnostics</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: 30px;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            border: 2px solid #e2e8f0;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .card-title {
+            font-size: 0.9em;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+
+        .card-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 5px;
+        }
+
+        .card-subtitle {
+            font-size: 0.9em;
+            color: #a0aec0;
+        }
+
+        .trend-positive {
+            color: #48bb78;
+        }
+
+        .trend-negative {
+            color: #f56565;
+        }
+
+        .trend-stable {
+            color: #4299e1;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-good {
+            background: #48bb78;
+        }
+
+        .status-warning {
+            background: #ed8936;
+        }
+
+        .status-error {
+            background: #f56565;
+        }
+
+        .chart-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            border: 2px solid #e2e8f0;
+            margin-bottom: 30px;
+        }
+
+        .chart-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #2d3748;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            border: 2px solid #e2e8f0;
+            overflow-x: auto;
+            margin-top: 30px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #f7fafc;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #2d3748;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        tr:hover {
+            background: #f7fafc;
+        }
+
+        .alerts {
+            background: #fff5f5;
+            border-left: 4px solid #f56565;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .alerts.show {
+            display: block;
+        }
+
+        .alerts-title {
+            font-weight: bold;
+            color: #c53030;
+            margin-bottom: 10px;
+        }
+
+        .alert-item {
+            color: #742a2a;
+            margin-bottom: 5px;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .refresh-section {
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .last-refresh {
+            color: #718096;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .message.show {
+            display: block;
+        }
+
+        .message-success {
+            background: #f0fff4;
+            border: 1px solid #9ae6b4;
+            color: #22543d;
+        }
+
+        .message-error {
+            background: #fff5f5;
+            border: 1px solid #fc8181;
+            color: #742a2a;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>OBD2 Dashboard</h1>
+            <p>Honda Accord Diagnostics & Trend Analysis</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Refresh Section -->
+            <div class="refresh-section">
+                <button id="refreshBtn" class="btn btn-primary">Refresh Data</button>
+                <div class="last-refresh" id="lastRefresh">Last refresh: Never</div>
+            </div>
+
+            <!-- Messages -->
+            <div id="successMessage" class="message message-success"></div>
+            <div id="errorMessage" class="message message-error"></div>
+
+            <!-- Loading Indicator -->
+            <div id="loading" class="loading">
+                <div class="spinner"></div>
+                <p>Loading data...</p>
+            </div>
+
+            <!-- Alerts -->
+            <div id="alerts" class="alerts">
+                <div class="alerts-title">Alerts</div>
+                <div id="alertsList"></div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="summary-cards">
+                <div class="card">
+                    <div class="card-title">Current Fuel Economy</div>
+                    <div class="card-value" id="currentMPG">--</div>
+                    <div class="card-subtitle" id="mpgTrend">Loading...</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Fuel Trim (STFT)</div>
+                    <div class="card-value" id="currentSTFT">--</div>
+                    <div class="card-subtitle" id="stftStatus">
+                        <span class="status-indicator status-good"></span>Normal
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Fuel Trim (LTFT)</div>
+                    <div class="card-value" id="currentLTFT">--</div>
+                    <div class="card-subtitle" id="ltftStatus">
+                        <span class="status-indicator status-good"></span>Normal
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Total Trips</div>
+                    <div class="card-value" id="totalTrips">--</div>
+                    <div class="card-subtitle">Last 28 days</div>
+                </div>
+            </div>
+
+            <!-- Fuel Economy Chart -->
+            <div class="chart-container">
+                <div class="chart-title">28-Day Fuel Economy Trend</div>
+                <canvas id="fuelEconomyChart"></canvas>
+            </div>
+
+            <!-- Recent Trips Table -->
+            <div class="table-container">
+                <div class="chart-title">Recent Trips</div>
+                <table id="tripsTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Duration</th>
+                            <th>Distance</th>
+                            <th>Fuel Economy</th>
+                            <th>STFT</th>
+                            <th>LTFT</th>
+                            <th>Coolant Temp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tripsTableBody">
+                        <tr>
+                            <td colspan="7" style="text-align: center; color: #a0aec0;">No trips data available</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let chart = null;
+
+        // Load dashboard data on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDashboard();
+        });
+
+        // Refresh button handler
+        document.getElementById('refreshBtn').addEventListener('click', function() {
+            refreshData();
+        });
+
+        async function refreshData() {
+            const btn = document.getElementById('refreshBtn');
+            const loading = document.getElementById('loading');
+            const successMsg = document.getElementById('successMessage');
+            const errorMsg = document.getElementById('errorMessage');
+
+            // Hide messages
+            successMsg.classList.remove('show');
+            errorMsg.classList.remove('show');
+
+            // Disable button and show loading
+            btn.disabled = true;
+            loading.classList.add('show');
+
+            try {
+                const response = await fetch('/api/refresh', {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    // Show success message
+                    let message = `Scanned ${data.files_scanned} files, processed ${data.files_processed} files, created ${data.trips_created} trips`;
+                    if (data.warnings.length > 0) {
+                        message += `\nWarnings: ${data.warnings.join(', ')}`;
+                    }
+                    successMsg.textContent = message;
+                    successMsg.classList.add('show');
+
+                    // Update last refresh time
+                    document.getElementById('lastRefresh').textContent =
+                        `Last refresh: ${new Date().toLocaleString()}`;
+
+                    // Reload dashboard
+                    setTimeout(() => {
+                        loadDashboard();
+                    }, 1000);
+                } else {
+                    throw new Error(data.message || 'Refresh failed');
+                }
+            } catch (error) {
+                errorMsg.textContent = `Error: ${error.message}`;
+                errorMsg.classList.add('show');
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        }
+
+        async function loadDashboard() {
+            const loading = document.getElementById('loading');
+            loading.classList.add('show');
+
+            try {
+                // Load stats and trips in parallel
+                const [statsResponse, tripsResponse] = await Promise.all([
+                    fetch('/api/stats?days=28'),
+                    fetch('/api/trips?limit=10&sort=trip_date&order=desc')
+                ]);
+
+                const stats = await statsResponse.json();
+                const trips = await tripsResponse.json();
+
+                // Update summary cards
+                updateSummaryCards(stats);
+
+                // Update chart
+                updateChart(trips.trips);
+
+                // Update trips table
+                updateTripsTable(trips.trips);
+
+                // Update alerts
+                updateAlerts(stats.alerts);
+
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                document.getElementById('errorMessage').textContent =
+                    `Error loading dashboard: ${error.message}`;
+                document.getElementById('errorMessage').classList.add('show');
+            } finally {
+                loading.classList.remove('show');
+            }
+        }
+
+        function updateSummaryCards(stats) {
+            // Current MPG
+            const currentMPG = stats.fuel_economy.current_week_avg || 0;
+            document.getElementById('currentMPG').textContent =
+                currentMPG ? currentMPG.toFixed(1) : '--';
+
+            // MPG Trend
+            if (stats.fuel_economy.change_percent !== null) {
+                const change = stats.fuel_economy.change_percent;
+                const trendClass = change > 0 ? 'trend-positive' : (change < 0 ? 'trend-negative' : 'trend-stable');
+                document.getElementById('mpgTrend').innerHTML =
+                    `<span class="${trendClass}">${change > 0 ? '+' : ''}${change.toFixed(1)}%</span> vs last week`;
+            } else {
+                document.getElementById('mpgTrend').textContent = 'Insufficient data';
+            }
+
+            // STFT
+            const currentSTFT = stats.fuel_trim_stft.current_avg || 0;
+            document.getElementById('currentSTFT').textContent =
+                currentSTFT ? `${currentSTFT.toFixed(1)}%` : '--';
+
+            // STFT Status
+            const stftStatus = Math.abs(currentSTFT) > 15 ? 'warning' : (Math.abs(currentSTFT) > 20 ? 'error' : 'good');
+            const stftStatusText = Math.abs(currentSTFT) > 15 ? 'High' : 'Normal';
+            document.getElementById('stftStatus').innerHTML =
+                `<span class="status-indicator status-${stftStatus}"></span>${stftStatusText}`;
+
+            // LTFT
+            const currentLTFT = stats.fuel_trim_ltft.current_avg || 0;
+            document.getElementById('currentLTFT').textContent =
+                currentLTFT ? `${currentLTFT.toFixed(1)}%` : '--';
+
+            // LTFT Status
+            const ltftStatus = Math.abs(currentLTFT) > 15 ? 'warning' : (Math.abs(currentLTFT) > 20 ? 'error' : 'good');
+            const ltftStatusText = Math.abs(currentLTFT) > 15 ? 'High' : 'Normal';
+            document.getElementById('ltftStatus').innerHTML =
+                `<span class="status-indicator status-${ltftStatus}"></span>${ltftStatusText}`;
+
+            // Total Trips
+            document.getElementById('totalTrips').textContent = stats.trips_count || 0;
+        }
+
+        function updateChart(trips) {
+            const ctx = document.getElementById('fuelEconomyChart').getContext('2d');
+
+            // Prepare data (reverse to show oldest to newest)
+            const reversedTrips = [...trips].reverse();
+            const labels = reversedTrips.map(trip => trip.trip_date);
+            const data = reversedTrips.map(trip => trip.avg_fuel_economy_mpg);
+
+            // Destroy existing chart
+            if (chart) {
+                chart.destroy();
+            }
+
+            // Create new chart
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Fuel Economy (MPG)',
+                        data: data,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'MPG'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateTripsTable(trips) {
+            const tbody = document.getElementById('tripsTableBody');
+
+            if (trips.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #a0aec0;">No trips data available</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = trips.map(trip => `
+                <tr>
+                    <td>${trip.trip_date}</td>
+                    <td>${trip.duration_minutes} min</td>
+                    <td>${trip.distance_miles ? trip.distance_miles.toFixed(1) : '--'} mi</td>
+                    <td>${trip.avg_fuel_economy_mpg ? trip.avg_fuel_economy_mpg.toFixed(1) : '--'} mpg</td>
+                    <td>${trip.avg_stft_percent ? trip.avg_stft_percent.toFixed(1) : '--'}%</td>
+                    <td>${trip.avg_ltft_percent ? trip.avg_ltft_percent.toFixed(1) : '--'}%</td>
+                    <td>${trip.avg_coolant_temp_f ? trip.avg_coolant_temp_f.toFixed(0) : '--'}°F</td>
+                </tr>
+            `).join('');
+        }
+
+        function updateAlerts(alerts) {
+            const alertsDiv = document.getElementById('alerts');
+            const alertsList = document.getElementById('alertsList');
+
+            if (alerts.length === 0) {
+                alertsDiv.classList.remove('show');
+                return;
+            }
+
+            alertsList.innerHTML = alerts.map(alert =>
+                `<div class="alert-item">${alert}</div>`
+            ).join('');
+
+            alertsDiv.classList.add('show');
+        }
+    </script>
+</body>
+</html>
