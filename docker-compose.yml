@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  obd2-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: obd2-service
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_ECHO=${DATABASE_ECHO:-False}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CSV_UPLOADS_FOLDER=${CSV_UPLOADS_FOLDER:-/data/csv_uploads}
+      - CSV_PROCESSED_FOLDER=${CSV_PROCESSED_FOLDER:-/data/csv_uploads/processed}
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
+    volumes:
+      # Mount CSV uploads folder
+      - ${HOST_CSV_UPLOADS_FOLDER:-./data/csv_uploads}:/data/csv_uploads
+      - ${HOST_CSV_PROCESSED_FOLDER:-./data/csv_uploads/processed}:/data/csv_uploads/processed
+    restart: unless-stopped
+    networks:
+      - obd2-network
+    depends_on:
+      - mariadb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # MariaDB service (optional - if you want to run database in Docker)
+  mariadb:
+    image: mariadb:11.2
+    container_name: obd2-mariadb
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpassword}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-obd2_db}
+      - MYSQL_USER=${MYSQL_USER:-obd2user}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-obd2password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - obd2-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  obd2-network:
+    driver: bridge
+
+volumes:
+  mariadb-data:
+    driver: local

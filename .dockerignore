@@ -1,0 +1,56 @@
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# CSV data files
+data/csv_uploads/*.csv
+data/csv_uploads/processed/*.csv
+
+# Documentation
+*.md
+!README.md
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+tests/
+
+# Docker
+Dockerfile
+docker-compose.yml
+docker-compose.override.yml
+
+# Examples
+examples/
