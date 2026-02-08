@@ -289,7 +289,10 @@ class CSVProcessor:
                 errors.append("Could not parse StartTime from header")
 
             # Read CSV (skip first line which is the header comment)
-            self.df = pd.read_csv(self.filepath, skiprows=1)
+            # skipinitialspace=True strips the leading spaces after commas in column names
+            self.df = pd.read_csv(self.filepath, skiprows=1, skipinitialspace=True)
+            # Also strip any remaining whitespace from column names to be safe
+            self.df.columns = self.df.columns.str.strip()
 
             # Validate columns
             is_valid, missing_cols = self.validate_columns(self.df)
