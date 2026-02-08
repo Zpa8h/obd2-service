@@ -2,7 +2,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import date, time, datetime
-from decimal import Decimal
 
 
 class TripBase(BaseModel):
@@ -11,22 +10,22 @@ class TripBase(BaseModel):
     trip_start_time: time
     trip_end_time: Optional[time] = None
     duration_minutes: int
-    distance_miles: Optional[Decimal] = None
-    avg_fuel_economy_mpg: Optional[Decimal] = None
-    min_fuel_economy_mpg: Optional[Decimal] = None
-    max_fuel_economy_mpg: Optional[Decimal] = None
-    avg_stft_percent: Optional[Decimal] = None
-    min_stft_percent: Optional[Decimal] = None
-    max_stft_percent: Optional[Decimal] = None
-    avg_ltft_percent: Optional[Decimal] = None
-    min_ltft_percent: Optional[Decimal] = None
-    max_ltft_percent: Optional[Decimal] = None
-    avg_coolant_temp_f: Optional[Decimal] = None
-    min_coolant_temp_f: Optional[Decimal] = None
-    max_coolant_temp_f: Optional[Decimal] = None
-    avg_engine_load_percent: Optional[Decimal] = None
-    max_engine_load_percent: Optional[Decimal] = None
-    avg_o2_voltage_v: Optional[Decimal] = None
+    distance_miles: Optional[float] = None
+    avg_fuel_economy_mpg: Optional[float] = None
+    min_fuel_economy_mpg: Optional[float] = None
+    max_fuel_economy_mpg: Optional[float] = None
+    avg_stft_percent: Optional[float] = None
+    min_stft_percent: Optional[float] = None
+    max_stft_percent: Optional[float] = None
+    avg_ltft_percent: Optional[float] = None
+    min_ltft_percent: Optional[float] = None
+    max_ltft_percent: Optional[float] = None
+    avg_coolant_temp_f: Optional[float] = None
+    min_coolant_temp_f: Optional[float] = None
+    max_coolant_temp_f: Optional[float] = None
+    avg_engine_load_percent: Optional[float] = None
+    max_engine_load_percent: Optional[float] = None
+    avg_o2_voltage_v: Optional[float] = None
 
 
 class TripResponse(TripBase):
