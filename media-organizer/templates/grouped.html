@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% block title %}By Title - Media Library Organizer{% endblock %}
+
+{% block content %}
+<div x-data="groupClassifier()" x-init="init()">
+
+    <!-- Stats bar -->
+    <div class="bg-white rounded-lg shadow-sm p-4 mb-6 flex flex-wrap items-center gap-4">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-lg font-semibold text-gray-800">Classify by Title</h2>
+            <p class="text-sm text-gray-500">{{ groups | length }} unique titles &middot; Source: {{ source_dir or 'Not configured' }}</p>
+        </div>
+        <div class="flex gap-3 text-sm">
+            <span class="badge-unclassified px-3 py-1 rounded-full font-medium">
+                Unclassified: <span x-text="counts.unclassified || 0">{{ counts.get('unclassified', 0) }}</span>
+            </span>
+            <span class="badge-kids px-3 py-1 rounded-full font-medium">
+                Kids: <span x-text="counts.kids || 0">{{ counts.get('kids', 0) }}</span>
+            </span>
+            <span class="badge-adults px-3 py-1 rounded-full font-medium">
+                Adults: <span x-text="counts.adults || 0">{{ counts.get('adults', 0) }}</span>
+            </span>
+            <span class="badge-skip px-3 py-1 rounded-full font-medium">
+                Skip: <span x-text="counts.skip || 0">{{ counts.get('skip', 0) }}</span>
+            </span>
+            <span class="bg-gray-100 text-gray-700 px-3 py-1 rounded-full font-medium">
+                Total: <span x-text="counts.total || 0">{{ counts.get('total', 0) }}</span>
+            </span>
+        </div>
+    </div>
+
+    <!-- Action bar -->
+    <div class="bg-white rounded-lg shadow-sm p-4 mb-6 flex flex-wrap gap-3 items-center">
+        <button @click="scanFiles()" :disabled="scanning"
+            class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50">
+            <span x-show="!scanning">Scan Directory</span>
+            <span x-show="scanning">Scanning...</span>
+        </button>
+        <button @click="autoClassify()" :disabled="autoRunning"
+            class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50">
+            <span x-show="!autoRunning">Auto-Classify Kids</span>
+            <span x-show="autoRunning">Running...</span>
+        </button>
+        <div class="flex-1"></div>
+        <a href="/preview" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm font-medium">
+            Preview Moves &rarr;
+        </a>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white rounded-lg shadow-sm p-4 mb-6">
+        <form method="GET" action="/grouped" class="flex flex-wrap gap-3 items-end">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Search</label>
+                <input type="text" name="search" value="{{ search }}" placeholder="Search titles..."
+                    class="border rounded px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-300">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Classification</label>
+                <select name="classification" class="border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+                    <option value="all" {% if classification == 'all' %}selected{% endif %}>All</option>
+                    <option value="unclassified" {% if classification == 'unclassified' %}selected{% endif %}>Unclassified</option>
+                    <option value="kids" {% if classification == 'kids' %}selected{% endif %}>Kids</option>
+                    <option value="adults" {% if classification == 'adults' %}selected{% endif %}>Adults</option>
+                    <option value="skip" {% if classification == 'skip' %}selected{% endif %}>Skip</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Type</label>
+                <select name="media_type" class="border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+                    <option value="all" {% if media_type == 'all' %}selected{% endif %}>All</option>
+                    <option value="movie" {% if media_type == 'movie' %}selected{% endif %}>Movies</option>
+                    <option value="tv" {% if media_type == 'tv' %}selected{% endif %}>TV Shows</option>
+                </select>
+            </div>
+            <button type="submit" class="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded text-sm font-medium">
+                Filter
+            </button>
+            {% if search or classification != 'all' or media_type != 'all' %}
+            <a href="/grouped" class="text-sm text-gray-500 hover:text-gray-700 py-2">Clear filters</a>
+            {% endif %}
+        </form>
+    </div>
+
+    <!-- Notification -->
+    <div x-show="notification" x-transition class="fixed top-4 right-4 z-50 max-w-sm" x-cloak>
+        <div :class="notificationType === 'error' ? 'bg-red-100 text-red-700 border-red-300' : 'bg-green-100 text-green-700 border-green-300'"
+            class="border rounded-lg p-3 shadow-lg text-sm">
+            <span x-text="notification"></span>
+        </div>
+    </div>
+
+    <!-- Grouped table -->
+    {% if groups %}
+    <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 border-b">
+                <tr>
+                    <th class="p-3 text-left">Title</th>
+                    <th class="p-3 text-left w-20">Year</th>
+                    <th class="p-3 text-left w-20">Type</th>
+                    <th class="p-3 text-left w-20">Files</th>
+                    <th class="p-3 text-left w-20">Seasons</th>
+                    <th class="p-3 text-left w-24">Size</th>
+                    <th class="p-3 text-left w-32">Status</th>
+                    <th class="p-3 text-center w-56">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for g in groups %}
+                <tr class="border-b hover:bg-gray-50 transition-colors" id="grow-{{ loop.index }}">
+                    <td class="p-3">
+                        <div class="font-medium text-gray-800">{{ g.detected_title or 'Unknown' }}</div>
+                        {% if g.suggestion %}
+                        <span class="suggestion-badge text-xs px-1.5 py-0.5 rounded">Suggested: {{ g.suggestion }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="p-3 text-gray-600">{{ g.year or '-' }}</td>
+                    <td class="p-3">
+                        <span class="text-xs px-2 py-0.5 rounded-full {% if g.media_type == 'tv' %}bg-blue-50 text-blue-700{% else %}bg-gray-100 text-gray-600{% endif %}">
+                            {{ g.media_type }}
+                        </span>
+                    </td>
+                    <td class="p-3 text-gray-600 font-medium">{{ g.file_count }}</td>
+                    <td class="p-3 text-gray-600 text-xs">{{ g.seasons or '-' }}</td>
+                    <td class="p-3 text-gray-600 text-xs">{{ g.size_human }}</td>
+                    <td class="p-3" id="gstatus-{{ loop.index }}">
+                        <span class="badge-{{ g.classification }} text-xs px-2 py-1 rounded-full font-medium"
+                            id="gbadge-{{ loop.index }}">
+                            {{ g.classification }}{% if g.mixed %} (mixed){% endif %}
+                        </span>
+                    </td>
+                    <td class="p-3 text-center">
+                        <div class="flex gap-1 justify-center">
+                            <button @click="classifyTitle('{{ g.detected_title | e }}', '{{ g.media_type }}', 'kids', {{ loop.index }})"
+                                class="btn-kids px-2.5 py-1 rounded text-xs font-medium {% if g.classification == 'kids' and not g.mixed %}ring-2 ring-blue-300{% endif %}">
+                                Kids
+                            </button>
+                            <button @click="classifyTitle('{{ g.detected_title | e }}', '{{ g.media_type }}', 'adults', {{ loop.index }})"
+                                class="btn-adults px-2.5 py-1 rounded text-xs font-medium {% if g.classification == 'adults' and not g.mixed %}ring-2 ring-purple-300{% endif %}">
+                                Adults
+                            </button>
+                            <button @click="classifyTitle('{{ g.detected_title | e }}', '{{ g.media_type }}', 'skip', {{ loop.index }})"
+                                class="btn-skip px-2.5 py-1 rounded text-xs font-medium {% if g.classification == 'skip' and not g.mixed %}ring-2 ring-gray-300{% endif %}">
+                                Skip
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% else %}
+    <!-- Empty state -->
+    <div class="bg-white rounded-lg shadow-sm p-12 text-center">
+        {% if source_dir %}
+        <p class="text-gray-500 text-lg mb-4">No media files found.</p>
+        <p class="text-gray-400 mb-6">Click "Scan Directory" to scan <code class="bg-gray-100 px-2 py-1 rounded">{{ source_dir }}</code></p>
+        <button @click="scanFiles()"
+            class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded font-medium">
+            Scan Directory
+        </button>
+        {% else %}
+        <p class="text-gray-500 text-lg mb-4">No source directory configured.</p>
+        <p class="text-gray-400 mb-6">Go to Settings to configure your media directory path.</p>
+        <a href="/settings" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded font-medium">
+            Go to Settings
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function groupClassifier() {
+    return {
+        counts: {{ counts | tojson }},
+        scanning: false,
+        autoRunning: false,
+        notification: '',
+        notificationType: 'success',
+
+        init() {},
+
+        notify(msg, type = 'success') {
+            this.notification = msg;
+            this.notificationType = type;
+            setTimeout(() => { this.notification = ''; }, 3000);
+        },
+
+        async classifyTitle(title, mediaType, classification, rowIdx) {
+            try {
+                const resp = await fetch('/api/classify-title', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, media_type: mediaType, classification })
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    this.counts = data.counts;
+                    this.notify(`Classified ${data.classified} files as ${classification}`);
+                    // Update badge in-place
+                    const badge = document.getElementById('gbadge-' + rowIdx);
+                    if (badge) {
+                        badge.textContent = classification;
+                        badge.className = 'badge-' + classification + ' text-xs px-2 py-1 rounded-full font-medium';
+                    }
+                    // Update button ring highlights
+                    const row = document.getElementById('grow-' + rowIdx);
+                    if (row) {
+                        row.querySelectorAll('button').forEach(btn => {
+                            btn.classList.remove('ring-2', 'ring-blue-300', 'ring-purple-300', 'ring-gray-300');
+                        });
+                        const ringClass = classification === 'kids' ? 'ring-blue-300' :
+                                          classification === 'adults' ? 'ring-purple-300' : 'ring-gray-300';
+                        const activeBtn = Array.from(row.querySelectorAll('button'))
+                            .find(b => b.textContent.trim().toLowerCase() === classification);
+                        if (activeBtn) {
+                            activeBtn.classList.add('ring-2', ringClass);
+                        }
+                    }
+                } else {
+                    this.notify(data.error || 'Classification failed', 'error');
+                }
+            } catch (e) {
+                this.notify('Error classifying title', 'error');
+            }
+        },
+
+        async scanFiles() {
+            this.scanning = true;
+            try {
+                const resp = await fetch('/api/scan', { method: 'POST' });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    this.counts = data.counts;
+                    this.notify(`Found ${data.files_found} media files`);
+                    setTimeout(() => window.location.reload(), 500);
+                } else {
+                    this.notify(data.error || 'Scan failed', 'error');
+                }
+            } catch (e) {
+                this.notify('Error scanning directory', 'error');
+            } finally {
+                this.scanning = false;
+            }
+        },
+
+        async autoClassify() {
+            this.autoRunning = true;
+            try {
+                const resp = await fetch('/api/auto-classify', { method: 'POST' });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    this.counts = data.counts;
+                    this.notify(`Auto-classified ${data.auto_classified} files. ${data.remaining_unclassified} remaining.`);
+                    if (data.auto_classified > 0) {
+                        setTimeout(() => window.location.reload(), 500);
+                    }
+                }
+            } catch (e) {
+                this.notify('Error in auto-classification', 'error');
+            } finally {
+                this.autoRunning = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}
