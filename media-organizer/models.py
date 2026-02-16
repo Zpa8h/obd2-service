@@ -272,6 +272,87 @@ def get_move_history():
     return [dict(r) for r in rows]
 
 
+def get_title_groups(classification=None, search=None, media_type=None):
+    """Get media files grouped by detected_title with counts and classification info."""
+    db = get_db()
+    conditions = []
+    params = []
+
+    if classification and classification != "all":
+        conditions.append("classification = ?")
+        params.append(classification)
+
+    if media_type and media_type != "all":
+        conditions.append("media_type = ?")
+        params.append(media_type)
+
+    if search:
+        conditions.append("(detected_title LIKE ? OR filename LIKE ?)")
+        search_term = f"%{search}%"
+        params.extend([search_term, search_term])
+
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+
+    rows = db.execute(
+        f"""SELECT
+            detected_title,
+            media_type,
+            classification,
+            COUNT(*) as file_count,
+            SUM(size_bytes) as total_size,
+            MIN(detected_year) as year,
+            GROUP_CONCAT(DISTINCT season) as seasons
+        FROM media_files{where}
+        GROUP BY detected_title, media_type, classification
+        ORDER BY detected_title ASC""",
+        params,
+    ).fetchall()
+    db.close()
+
+    # Merge rows with the same title+type but different classifications
+    # into a single group showing the mixed state
+    groups = {}
+    for row in rows:
+        row = dict(row)
+        key = (row["detected_title"], row["media_type"])
+        if key not in groups:
+            groups[key] = {
+                "detected_title": row["detected_title"],
+                "media_type": row["media_type"],
+                "file_count": row["file_count"],
+                "total_size": row["total_size"],
+                "year": row["year"],
+                "seasons": row["seasons"],
+                "classification": row["classification"],
+                "mixed": False,
+            }
+        else:
+            g = groups[key]
+            g["file_count"] += row["file_count"]
+            g["total_size"] += row["total_size"]
+            if g["classification"] != row["classification"]:
+                g["mixed"] = True
+                # Prefer showing the non-unclassified value if one side is classified
+                if row["classification"] != "unclassified":
+                    g["classification"] = row["classification"]
+
+    return list(groups.values())
+
+
+def classify_by_title(title: str, media_type: str, classification: str) -> int:
+    """Classify all files matching a given title and media type."""
+    db = get_db()
+    now = datetime.now().isoformat()
+    cursor = db.execute(
+        "UPDATE media_files SET classification = ?, updated_at = ? WHERE detected_title = ? AND media_type = ?",
+        (classification, now, title, media_type),
+    )
+    count = cursor.rowcount
+    db.commit()
+    db.close()
+    return count
+
+
 def remove_missing_files():
     """Remove database entries for files that no longer exist on disk."""
     db = get_db()

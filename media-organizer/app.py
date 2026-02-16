@@ -91,6 +91,40 @@ def index():
     )
 
 
+@app.route("/grouped")
+def grouped():
+    """Classification page grouped by title — one row per show/movie."""
+    search = request.args.get("search", "").strip()
+    classification = request.args.get("classification", "all")
+    media_type = request.args.get("media_type", "all")
+
+    groups = models.get_title_groups(
+        classification=classification,
+        search=search,
+        media_type=media_type,
+    )
+
+    counts = models.get_classification_counts()
+
+    for g in groups:
+        if g["classification"] == "unclassified":
+            g["suggestion"] = scanner.suggest_classification(g["detected_title"])
+        else:
+            g["suggestion"] = None
+        g["size_human"] = mover.format_size(g["total_size"])
+
+    return render_template(
+        "grouped.html",
+        groups=groups,
+        counts=counts,
+        search=search,
+        classification=classification,
+        media_type=media_type,
+        source_dir=SOURCE_DIR,
+        dest_dir=DEST_DIR,
+    )
+
+
 @app.route("/preview")
 def preview():
     """Preview planned moves before execution."""
@@ -182,6 +216,22 @@ def api_classify_batch():
     models.classify_multiple(file_ids, classification)
     counts = models.get_classification_counts()
     return jsonify({"status": "success", "classified": len(file_ids), "counts": counts})
+
+
+@app.route("/api/classify-title", methods=["POST"])
+def api_classify_title():
+    """Classify all files matching a title and media type at once."""
+    data = request.get_json()
+    title = data.get("title")
+    media_type = data.get("media_type")
+    classification = data.get("classification")
+
+    if not title or not media_type or classification not in ("kids", "adults", "skip", "unclassified"):
+        return jsonify({"error": "Invalid title, media_type, or classification"}), 400
+
+    updated = models.classify_by_title(title, media_type, classification)
+    counts = models.get_classification_counts()
+    return jsonify({"status": "success", "classified": updated, "counts": counts})
 
 
 @app.route("/api/auto-classify", methods=["POST"])
