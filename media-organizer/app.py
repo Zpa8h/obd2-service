@@ -6,6 +6,10 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from flask import (
     Flask,
     render_template,
