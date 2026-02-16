@@ -284,3 +284,18 @@ def remove_missing_files():
     db.commit()
     db.close()
     return removed
+
+
+def remove_files_outside_source(source_dir: str):
+    """Remove database entries for files not under the current source directory."""
+    db = get_db()
+    source_path = str(Path(source_dir).resolve())
+    rows = db.execute("SELECT id, filepath FROM media_files").fetchall()
+    removed = 0
+    for row in rows:
+        if not row["filepath"].startswith(source_path + os.sep) and row["filepath"] != source_path:
+            db.execute("DELETE FROM media_files WHERE id = ?", (row["id"],))
+            removed += 1
+    db.commit()
+    db.close()
+    return removed

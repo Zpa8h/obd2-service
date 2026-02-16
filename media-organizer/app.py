@@ -6,6 +6,10 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from flask import (
     Flask,
     render_template,
@@ -130,6 +134,10 @@ def api_scan():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
+    # Remove entries from previous source directories so the UI only shows
+    # files that belong to the current source.
+    stale_removed = models.remove_files_outside_source(source)
+
     session_id = models.create_scan_session(source)
     for file_info in results:
         models.upsert_media_file(session_id, file_info)
@@ -140,6 +148,7 @@ def api_scan():
         {
             "status": "success",
             "files_found": len(results),
+            "stale_removed": stale_removed,
             "counts": counts,
         }
     )
