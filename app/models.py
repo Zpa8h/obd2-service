@@ -3,6 +3,7 @@ from sqlalchemy import (
     Column, Integer, String, Date, Time, DateTime, DECIMAL,
     Text, Enum, ForeignKey, Index
 )
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -74,7 +75,7 @@ class RawCSVBackup(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     trip_id = Column(Integer, ForeignKey("trips.id"), nullable=True)
     filename = Column(String(255), nullable=False, index=True)
-    csv_content = Column(Text, nullable=False)
+    csv_content = Column(LONGTEXT, nullable=False)
     uploaded_at = Column(DateTime, nullable=False, server_default=func.now())
 
     # Relationships
