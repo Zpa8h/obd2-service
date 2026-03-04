@@ -91,7 +91,7 @@ class ProcessingLog(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     filename = Column(String(255), nullable=False)
-    status = Column(Enum(ProcessingStatus), nullable=False)
+    status = Column(Enum(ProcessingStatus, values_callable=lambda x: [e.value for e in x]), nullable=False)
     message = Column(Text, nullable=True)
     details = Column(Text, nullable=True)
     processed_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
