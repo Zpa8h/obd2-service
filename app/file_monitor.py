@@ -2,31 +2,39 @@
 import os
 import shutil
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.csv_processor import CSVProcessor
+from app.fillup_processor import FillupProcessor
 from app.models import Trip, RawCSVBackup, ProcessingLog, ProcessingStatus
 from app.utils import calculate_file_hash
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class FileMonitor:
     """Monitor CSV upload folder and process new files"""
 
-    def __init__(self, uploads_folder: str, processed_folder: str):
+    def __init__(self, uploads_folder: str, processed_folder: str, fillups_folder: Optional[str] = None):
         """
         Initialize file monitor
 
         Args:
             uploads_folder: Path to folder where CSVs are uploaded
             processed_folder: Path to folder where processed CSVs are moved
+            fillups_folder: Path to folder where fillups.csv is located (optional)
         """
         self.uploads_folder = Path(uploads_folder)
         self.processed_folder = Path(processed_folder)
+        self.fillups_folder = Path(fillups_folder) if fillups_folder else None
 
         # Ensure folders exist
         self.uploads_folder.mkdir(parents=True, exist_ok=True)
         self.processed_folder.mkdir(parents=True, exist_ok=True)
+        if self.fillups_folder:
+            self.fillups_folder.mkdir(parents=True, exist_ok=True)
 
     def scan_folder(self) -> List[str]:
         """
@@ -189,6 +197,98 @@ class FileMonitor:
         except Exception as e:
             print(f"Error moving file {filename}: {e}")
             return False
+
+    def process_fillups_csv(self, db: Session) -> Dict:
+        """
+        Process fillups.csv if it exists and has been modified
+
+        Args:
+            db: Database session
+
+        Returns:
+            Dictionary with processing results:
+            {processed: bool, records_added: int, records_updated: int, errors: list}
+        """
+        result = {
+            'processed': False,
+            'records_added': 0,
+            'records_updated': 0,
+            'errors': []
+        }
+
+        # Check if fillups folder is configured
+        if not self.fillups_folder:
+            logger.debug("Fillups folder not configured, skipping fillup processing")
+            return result
+
+        fillups_csv_path = self.fillups_folder / 'fillups.csv'
+
+        # Check if file exists
+        if not fillups_csv_path.exists():
+            logger.debug(f"Fillups file not found at {fillups_csv_path}, skipping")
+            return result
+
+        try:
+            # Get file modification time
+            fillups_mtime = fillups_csv_path.stat().st_mtime
+            fillups_mtime_dt = datetime.fromtimestamp(fillups_mtime)
+
+            # Check if file has been processed before and if it's been modified since
+            last_import = db.query(ProcessingLog).filter(
+                ProcessingLog.filename == 'fillups.csv',
+                ProcessingLog.status == ProcessingStatus.SUCCESS
+            ).order_by(ProcessingLog.processed_at.desc()).first()
+
+            should_process = (
+                last_import is None or
+                fillups_mtime_dt > last_import.processed_at
+            )
+
+            if not should_process:
+                logger.debug(f"Fillups.csv has not been modified since last import, skipping")
+                return result
+
+            # Process fillups CSV
+            processor = FillupProcessor(str(fillups_csv_path))
+            sync_result = processor.process(db)
+
+            result['processed'] = True
+            result['records_added'] = sync_result['records_added']
+            result['records_updated'] = sync_result['records_updated']
+            result['errors'] = sync_result.get('errors', [])
+
+            # Log processing result
+            if sync_result.get('errors'):
+                status = ProcessingStatus.WARNING
+                message = f"Processed fillups.csv with {len(sync_result['errors'])} errors"
+                details = '\n'.join(sync_result['errors'])
+            else:
+                status = ProcessingStatus.SUCCESS
+                message = (
+                    f"Imported {sync_result['records_added']} new, "
+                    f"updated {sync_result['records_updated']} existing fill-ups"
+                )
+                details = None
+
+            self._log_processing(db, 'fillups.csv', status, message, details)
+
+            logger.info(
+                f"Processed fillups.csv: {result['records_added']} added, "
+                f"{result['records_updated']} updated"
+            )
+
+        except Exception as e:
+            error_msg = f"Error processing fillups.csv: {str(e)}"
+            result['errors'].append(error_msg)
+            logger.error(error_msg)
+
+            # Log error
+            self._log_processing(
+                db, 'fillups.csv', ProcessingStatus.ERROR,
+                error_msg, str(e)
+            )
+
+        return result
 
     def get_processing_status(self, db: Session) -> Dict:
         """

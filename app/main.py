@@ -10,7 +10,7 @@ from sqlalchemy import func, and_
 from dotenv import load_dotenv
 
 from app.database import get_db, init_db
-from app.models import Trip, ProcessingLog
+from app.models import Trip, ProcessingLog, Fillup
 from app.file_monitor import FileMonitor
 from app.schemas import (
     TripResponse,
@@ -20,7 +20,10 @@ from app.schemas import (
     ErrorResponse,
     FuelEconomyStats,
     FuelTrimStats,
-    CoolantTempStats
+    CoolantTempStats,
+    ActualFillupStats,
+    FillupResponse,
+    FillupsListResponse
 )
 from app.utils import determine_trend, calculate_percentage_change
 
@@ -30,6 +33,7 @@ load_dotenv()
 # Get configuration
 CSV_UPLOADS_FOLDER = os.getenv("CSV_UPLOADS_FOLDER", "/data/csv_uploads")
 CSV_PROCESSED_FOLDER = os.getenv("CSV_PROCESSED_FOLDER", "/data/csv_uploads/processed")
+FILLUPS_FOLDER = os.getenv("FILLUPS_FOLDER", "/data/fillups")
 
 # Create FastAPI app
 app = FastAPI(
@@ -72,12 +76,22 @@ async def refresh_data(
     """
     try:
         # Initialize file monitor
-        monitor = FileMonitor(CSV_UPLOADS_FOLDER, CSV_PROCESSED_FOLDER)
+        monitor = FileMonitor(CSV_UPLOADS_FOLDER, CSV_PROCESSED_FOLDER, FILLUPS_FOLDER)
 
         # Scan folder for CSV files
         all_files = monitor.scan_folder()
 
+        # Initialize fillup processing result
+        fillup_result = {'processed': False, 'records_added': 0, 'records_updated': 0, 'errors': []}
+
         if not all_files:
+            # Even if no OBD2 files, still try to process fillups
+            fillup_result = monitor.process_fillups_csv(db)
+
+            warnings = ["No CSV files found in uploads folder"]
+            if fillup_result['errors']:
+                warnings.extend([f"fillups.csv: {err}" for err in fillup_result['errors']])
+
             return RefreshResponse(
                 status="success",
                 files_scanned=0,
@@ -85,7 +99,9 @@ async def refresh_data(
                 trips_created=0,
                 trips=[],
                 processed_filenames=[],
-                warnings=["No CSV files found in uploads folder"]
+                warnings=warnings,
+                fillups_processed=fillup_result['processed'],
+                fillups_updated=fillup_result['records_added'] + fillup_result['records_updated']
             )
 
         # Get unprocessed files (or all files if process_all=True)
@@ -95,6 +111,13 @@ async def refresh_data(
             files_to_process = monitor.get_unprocessed_files(db, all_files)
 
         if not files_to_process:
+            # Even if no OBD2 files to process, still try to process fillups
+            fillup_result = monitor.process_fillups_csv(db)
+
+            warnings = ["All files have already been processed"]
+            if fillup_result['errors']:
+                warnings.extend([f"fillups.csv: {err}" for err in fillup_result['errors']])
+
             return RefreshResponse(
                 status="success",
                 files_scanned=len(all_files),
@@ -102,7 +125,9 @@ async def refresh_data(
                 trips_created=0,
                 trips=[],
                 processed_filenames=[],
-                warnings=["All files have already been processed"]
+                warnings=warnings,
+                fillups_processed=fillup_result['processed'],
+                fillups_updated=fillup_result['records_added'] + fillup_result['records_updated']
             )
 
         # Process each file
@@ -123,6 +148,11 @@ async def refresh_data(
             if errors:
                 all_warnings.extend([f"{filename}: {err}" for err in errors])
 
+        # Process fillups.csv
+        fillup_result = monitor.process_fillups_csv(db)
+        if fillup_result['errors']:
+            all_warnings.extend([f"fillups.csv: {err}" for err in fillup_result['errors']])
+
         # Convert trips to response format
         trip_responses = [TripResponse.from_orm(trip) for trip in all_trips]
 
@@ -133,7 +163,9 @@ async def refresh_data(
             trips_created=len(all_trips),
             trips=trip_responses,
             processed_filenames=processed_filenames,
-            warnings=all_warnings
+            warnings=all_warnings,
+            fillups_processed=fillup_result['processed'],
+            fillups_updated=fillup_result['records_added'] + fillup_result['records_updated']
         )
 
     except Exception as e:
@@ -221,6 +253,51 @@ async def get_trip(
     return TripResponse.from_orm(trip)
 
 
+@app.get("/api/fillups", response_model=FillupsListResponse)
+async def get_fillups(
+    limit: int = Query(50, ge=1, le=200, description="Results per page"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    days: Optional[int] = Query(None, ge=1, description="Filter to last N days"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get fill-up records
+
+    Args:
+        limit: Max records to return
+        offset: Pagination offset
+        days: Filter to last N days (optional)
+        db: Database session
+
+    Returns:
+        FillupsListResponse with fillup records
+    """
+    try:
+        query = db.query(Fillup)
+
+        # Filter by date range if specified
+        if days:
+            cutoff_date = datetime.now().date() - timedelta(days=days)
+            query = query.filter(Fillup.fillup_date >= cutoff_date)
+
+        # Get total count
+        total = query.count()
+
+        # Apply sorting (newest first) and pagination
+        fillups = query.order_by(Fillup.fillup_date.desc()).offset(offset).limit(limit).all()
+
+        # Convert to response format
+        fillup_responses = [FillupResponse.from_orm(fillup) for fillup in fillups]
+
+        return FillupsListResponse(fillups=fillup_responses, total=total)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving fill-ups: {str(e)}"
+        )
+
+
 @app.get("/api/stats", response_model=StatsResponse)
 async def get_stats(
     days: int = Query(28, ge=1, le=365, description="Number of days to analyze"),
@@ -259,6 +336,7 @@ async def get_stats(
                 end_date=end_date,
                 trips_count=0,
                 fuel_economy=FuelEconomyStats(),
+                actual_fillups=None,
                 fuel_trim_stft=FuelTrimStats(),
                 fuel_trim_ltft=FuelTrimStats(),
                 coolant_temp=CoolantTempStats(),
@@ -331,6 +409,43 @@ async def get_stats(
             trend="stable"
         )
 
+        # Calculate fillup stats
+        fillups_query = db.query(Fillup).filter(
+            and_(
+                Fillup.fillup_date >= start_date,
+                Fillup.fillup_date <= end_date
+            )
+        ).order_by(Fillup.fillup_date.desc())
+
+        fillups = fillups_query.all()
+        actual_fillups = None
+
+        if fillups:
+            fillup_values = [float(f.mpg_actual) for f in fillups]
+
+            # Split into current vs previous week
+            current_week_fillups = [f for f in fillups if f.fillup_date > week_ago]
+            previous_week_fillups = [f for f in fillups if two_weeks_ago < f.fillup_date <= week_ago]
+
+            current_week_fillup_mpg = [float(f.mpg_actual) for f in current_week_fillups] if current_week_fillups else []
+            previous_week_fillup_mpg = [float(f.mpg_actual) for f in previous_week_fillups] if previous_week_fillups else []
+
+            actual_fillups = ActualFillupStats(
+                current_week_avg=round(sum(current_week_fillup_mpg) / len(current_week_fillup_mpg), 2) if current_week_fillup_mpg else None,
+                previous_week_avg=round(sum(previous_week_fillup_mpg) / len(previous_week_fillup_mpg), 2) if previous_week_fillup_mpg else None
+            )
+
+            # Calculate trend
+            if actual_fillups.current_week_avg and actual_fillups.previous_week_avg:
+                change = calculate_percentage_change(actual_fillups.current_week_avg, actual_fillups.previous_week_avg)
+                actual_fillups.change_percent = round(change, 2) if change else None
+                actual_fillups.trend = determine_trend(actual_fillups.current_week_avg, actual_fillups.previous_week_avg)
+
+            # Last fill-up details
+            latest = fillups[0]  # Already sorted desc
+            actual_fillups.last_fillup_date = latest.fillup_date
+            actual_fillups.last_fillup_mpg = float(latest.mpg_actual)
+
         # Generate alerts (basic implementation)
         alerts = []
         if fuel_trim_stft.max_spike and fuel_trim_stft.max_spike > 20:
@@ -346,6 +461,7 @@ async def get_stats(
             end_date=end_date,
             trips_count=trips_count,
             fuel_economy=fuel_economy,
+            actual_fillups=actual_fillups,
             fuel_trim_stft=fuel_trim_stft,
             fuel_trim_ltft=fuel_trim_ltft,
             coolant_temp=coolant_temp,

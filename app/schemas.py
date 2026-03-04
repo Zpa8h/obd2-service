@@ -86,6 +86,16 @@ class CoolantTempStats(BaseModel):
     max_recorded: Optional[float] = None
 
 
+class ActualFillupStats(BaseModel):
+    """Actual fill-up statistics"""
+    current_week_avg: Optional[float] = None
+    previous_week_avg: Optional[float] = None
+    change_percent: Optional[float] = None
+    trend: Optional[str] = None
+    last_fillup_date: Optional[date] = None
+    last_fillup_mpg: Optional[float] = None
+
+
 class StatsResponse(BaseModel):
     """Stats API response schema"""
     period: str
@@ -93,6 +103,7 @@ class StatsResponse(BaseModel):
     end_date: date
     trips_count: int
     fuel_economy: FuelEconomyStats
+    actual_fillups: Optional[ActualFillupStats] = None
     fuel_trim_stft: FuelTrimStats
     fuel_trim_ltft: FuelTrimStats
     coolant_temp: CoolantTempStats
@@ -108,6 +119,8 @@ class RefreshResponse(BaseModel):
     trips: List[TripResponse] = []
     processed_filenames: List[str] = []
     warnings: List[str] = []
+    fillups_processed: bool = False
+    fillups_updated: int = 0
 
 
 class ErrorResponse(BaseModel):
@@ -115,3 +128,26 @@ class ErrorResponse(BaseModel):
     status: str = "error"
     message: str
     details: Optional[str] = None
+
+
+class FillupBase(BaseModel):
+    """Base fillup schema"""
+    fillup_date: date
+    mpg_actual: float
+    notes: Optional[str] = None
+
+
+class FillupResponse(FillupBase):
+    """Fillup response schema"""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FillupsListResponse(BaseModel):
+    """Fillups list response schema"""
+    fillups: List[FillupResponse]
+    total: int

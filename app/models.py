@@ -100,6 +100,21 @@ class ProcessingLog(Base):
         return f"<ProcessingLog(id={self.id}, filename={self.filename}, status={self.status})>"
 
 
+class Fillup(Base):
+    """Manual fill-up tracking model"""
+    __tablename__ = "fillups"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    fillup_date = Column(Date, nullable=False, index=True, unique=True)
+    mpg_actual = Column(DECIMAL(6, 2), nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<Fillup(id={self.id}, date={self.fillup_date}, mpg={self.mpg_actual})>"
+
+
 # Create indexes
 Index("idx_trip_date", Trip.trip_date)
 Index("idx_filename_hash", Trip.filename_hash)

@@ -1,0 +1,17 @@
+# Fill-up Tracking CSV
+# Format: date,mpg,notes
+# Lines starting with # are comments and will be ignored
+#
+# Instructions:
+# 1. Copy this file to fillups.csv
+# 2. Add your fill-up data (one line per fill-up)
+# 3. Date format: YYYY-MM-DD
+# 4. MPG: Your calculated fuel economy (miles driven / gallons purchased)
+# 5. Notes: Optional description (can be blank but comma still required)
+#
+# Example entries:
+
+date,mpg,notes
+2026-02-15,28.5,Shell station on Main St
+2026-02-22,27.8,
+2026-03-01,29.2,Premium fuel test

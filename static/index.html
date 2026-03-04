@@ -339,6 +339,12 @@
                     <div class="card-value" id="totalTrips">--</div>
                     <div class="card-subtitle">Last 28 days</div>
                 </div>
+
+                <div class="card">
+                    <div class="card-title">Last Fill-up</div>
+                    <div class="card-value" id="lastFillupMPG">--</div>
+                    <div class="card-subtitle" id="lastFillupDate">No data</div>
+                </div>
             </div>
 
             <!-- Fuel Economy Chart -->
@@ -440,20 +446,22 @@
             loading.classList.add('show');
 
             try {
-                // Load stats and trips in parallel
-                const [statsResponse, tripsResponse] = await Promise.all([
+                // Load stats, trips, and fillups in parallel
+                const [statsResponse, tripsResponse, fillupsResponse] = await Promise.all([
                     fetch('/api/stats?days=28'),
-                    fetch('/api/trips?limit=10&sort=trip_date&order=desc')
+                    fetch('/api/trips?limit=50&sort=trip_date&order=desc'),
+                    fetch('/api/fillups?days=28')
                 ]);
 
                 const stats = await statsResponse.json();
                 const trips = await tripsResponse.json();
+                const fillups = await fillupsResponse.json();
 
                 // Update summary cards
                 updateSummaryCards(stats);
 
-                // Update chart
-                updateChart(trips.trips);
+                // Update chart with both datasets
+                updateChart(trips.trips, fillups.fillups);
 
                 // Update trips table
                 updateTripsTable(trips.trips);
@@ -511,34 +519,83 @@
 
             // Total Trips
             document.getElementById('totalTrips').textContent = stats.trips_count || 0;
+
+            // Last Fill-up
+            if (stats.actual_fillups && stats.actual_fillups.last_fillup_mpg) {
+                document.getElementById('lastFillupMPG').textContent =
+                    stats.actual_fillups.last_fillup_mpg.toFixed(1);
+
+                const fillupDate = new Date(stats.actual_fillups.last_fillup_date);
+                document.getElementById('lastFillupDate').textContent =
+                    fillupDate.toLocaleDateString();
+            } else {
+                document.getElementById('lastFillupMPG').textContent = '--';
+                document.getElementById('lastFillupDate').textContent = 'No fill-ups recorded';
+            }
         }
 
-        function updateChart(trips) {
+        function updateChart(trips, fillups) {
             const ctx = document.getElementById('fuelEconomyChart').getContext('2d');
 
-            // Prepare data (reverse to show oldest to newest)
-            const reversedTrips = [...trips].reverse();
-            const labels = reversedTrips.map(trip => trip.trip_date);
-            const data = reversedTrips.map(trip => trip.avg_fuel_economy_mpg);
+            // Prepare OBD2 trip data
+            const tripsSorted = [...trips].reverse();
+            const tripLabels = tripsSorted.map(t => t.trip_date);
+            const tripData = tripsSorted.map(t => t.avg_fuel_economy_mpg);
+
+            // Prepare fill-up data
+            const fillupsSorted = [...fillups].reverse();
+            const fillupLabels = fillupsSorted.map(f => f.fillup_date);
+            const fillupData = fillupsSorted.map(f => f.mpg_actual);
+
+            // Combine all unique dates for x-axis (sorted)
+            const allDates = [...new Set([...tripLabels, ...fillupLabels])].sort();
+
+            // Map data to common x-axis
+            const tripDataMapped = allDates.map(date => {
+                const trip = tripsSorted.find(t => t.trip_date === date);
+                return trip ? trip.avg_fuel_economy_mpg : null;
+            });
+
+            const fillupDataMapped = allDates.map(date => {
+                const fillup = fillupsSorted.find(f => f.fillup_date === date);
+                return fillup ? fillup.mpg_actual : null;
+            });
 
             // Destroy existing chart
             if (chart) {
                 chart.destroy();
             }
 
-            // Create new chart
+            // Create new chart with two datasets
             chart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Fuel Economy (MPG)',
-                        data: data,
-                        borderColor: '#667eea',
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        tension: 0.4,
-                        fill: true
-                    }]
+                    labels: allDates,
+                    datasets: [
+                        {
+                            label: 'OBD2 Trips',
+                            data: tripDataMapped,
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 3,
+                            pointHoverRadius: 5,
+                            spanGaps: true
+                        },
+                        {
+                            label: 'Actual Fill-ups',
+                            data: fillupDataMapped,
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            tension: 0.4,
+                            fill: false,
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
+                            pointStyle: 'circle',
+                            spanGaps: true
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
@@ -547,6 +604,10 @@
                         legend: {
                             display: true,
                             position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
                         }
                     },
                     scales: {
