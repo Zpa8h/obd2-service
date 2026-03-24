@@ -86,3 +86,18 @@ CREATE TABLE IF NOT EXISTS processing_logs (
     INDEX idx_processing_log_status (status),
     INDEX idx_processing_log_timestamp (processed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Table: fillups
+-- Manual fill-up tracking (actual fuel economy from gas station receipts)
+CREATE TABLE IF NOT EXISTS fillups (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    fillup_date DATE NOT NULL,
+    mpg_actual DECIMAL(6, 2) NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    -- Indexes
+    INDEX idx_fillup_date (fillup_date),
+    UNIQUE KEY unique_fillup_date (fillup_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

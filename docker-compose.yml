@@ -14,11 +14,14 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CSV_UPLOADS_FOLDER=${CSV_UPLOADS_FOLDER:-/data/csv_uploads}
       - CSV_PROCESSED_FOLDER=${CSV_PROCESSED_FOLDER:-/data/csv_uploads/processed}
+      - FILLUPS_FOLDER=${FILLUPS_FOLDER:-/data/fillups}
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
     volumes:
       # Mount CSV uploads folder
       - ${HOST_CSV_UPLOADS_FOLDER:-./data/csv_uploads}:/data/csv_uploads
       - ${HOST_CSV_PROCESSED_FOLDER:-./data/csv_uploads/processed}:/data/csv_uploads/processed
+      # Mount fillups folder
+      - ${HOST_FILLUPS_FOLDER:-./data/fillups}:/data/fillups
     restart: unless-stopped
     networks:
       - obd2-network
